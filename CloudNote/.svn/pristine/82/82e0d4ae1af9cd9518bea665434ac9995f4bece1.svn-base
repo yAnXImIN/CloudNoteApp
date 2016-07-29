@@ -1,0 +1,254 @@
+package com.ddbs.cloudnote.activity;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.baoyz.swipemenulistview.SwipeMenu;
+import com.baoyz.swipemenulistview.SwipeMenuCreator;
+import com.baoyz.swipemenulistview.SwipeMenuItem;
+import com.baoyz.swipemenulistview.SwipeMenuListView;
+import com.baoyz.swipemenulistview.SwipeMenuListView.OnMenuItemClickListener;
+import com.ddbs.cloudnote.R;
+import com.ddbs.cloudnote.dao.MyDatabaseHelper;
+import com.ddbs.cloudnote.entity.Note;
+import com.ddbs.cloudnote.util.ActivityCollector;
+import com.ddbs.cloudnote.util.DensityUtils;
+import com.ddbs.cloudnote.util.RefreshableView;
+import com.ddbs.cloudnote.util.RefreshableView.PullToRefreshListener;
+
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.os.AsyncTask;
+import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.widget.AdapterView;
+import android.widget.AdapterView.OnItemClickListener;
+import android.widget.AdapterView.OnItemLongClickListener;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.ListView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+public class NoteTitleActivity extends BaseActivity{
+	private SwipeMenuListView noteTitleList;
+	private Button addNewNote;
+	private RefreshableView refreshableView;
+	private List<Note> noteList;
+	private NoteAdapter adapter;
+	private MyDatabaseHelper dbHelper;
+	private long lastReturnTime = 0;
+	@Override
+	protected void onCreate(Bundle savedInstanceState) {
+		super.onCreate(savedInstanceState);
+		requestWindowFeature(Window.FEATURE_NO_TITLE);
+		dbHelper = new MyDatabaseHelper(this, "MyNote.db", null, 1);
+		initList();
+		setContentView(R.layout.note_title);
+		refreshableView = (RefreshableView) findViewById(R.id.refreshable_view);
+		refreshableView.setOnRefreshListener(new PullToRefreshListener() {
+
+			@Override
+			public void onRefresh() {
+				// TODO 从服务器获取数据
+				try {
+					Thread.sleep(3000);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+				refreshableView.finishRefreshing();
+			}
+		}, 0);
+		noteTitleList = (SwipeMenuListView) findViewById(R.id.note_title_list_view);
+		noteTitleList.setMenuCreator(new SwipeMenuCreator() {
+			
+			@Override
+			public void create(SwipeMenu menu) {
+				//	修改操作
+			    SwipeMenuItem openItem = new SwipeMenuItem(
+		                getApplicationContext());
+		        openItem.setBackground(new ColorDrawable(Color.rgb(0xC9, 0xC9,
+		                0xCE)));
+		        openItem.setWidth(DensityUtils.dp2px(getApplicationContext(),90));
+		        openItem.setTitle("修改");
+		        openItem.setTitleSize(18);
+		        openItem.setTitleColor(Color.WHITE);
+		        menu.addMenuItem(openItem);
+
+		        // 删除操作
+		        SwipeMenuItem deleteItem = new SwipeMenuItem(
+		                getApplicationContext());
+		        deleteItem.setBackground(new ColorDrawable(Color.rgb(0xF9,
+		                0x3F, 0x25)));
+		        deleteItem.setWidth(DensityUtils.dp2px(getApplicationContext(),90));
+		        deleteItem.setTitle("删除");
+		        deleteItem.setTitleSize(18);
+		        deleteItem.setTitleColor(Color.WHITE);
+		        menu.addMenuItem(deleteItem);
+				
+			}
+		});
+		noteTitleList.setOnMenuItemClickListener(new OnMenuItemClickListener() {
+			
+			@Override
+			public boolean onMenuItemClick(int position, SwipeMenu menu, int index) {
+				switch (index) {
+				case 0:
+					//TODO 更新操作
+					EditActivity.start(NoteTitleActivity.this, noteList.get(position).getTitle(), noteList.get(position).getContent());
+					break;
+				case 1:
+					//TODO 删除操作
+					final int pos = position;
+					new AlertDialog.Builder(NoteTitleActivity.this).setTitle("确认删除")
+					.setMessage("此条笔记将被删除")
+					.setPositiveButton("确定", new DialogInterface.OnClickListener() {
+
+						@Override
+						public void onClick(DialogInterface dialog, int which) {
+							// TODO 添加删除功能
+							adapter.remove(adapter.getItem(pos));
+							Toast.makeText(NoteTitleActivity.this, "删除成功", Toast.LENGTH_SHORT).show();
+						}
+					})
+					.setNegativeButton("取消", new DialogInterface.OnClickListener() {
+						@Override
+						public void onClick(DialogInterface dialog, int which) {
+							adapter.notifyDataSetChanged();
+						}
+					}).show();
+					break;
+				default:
+					break;
+				}
+				return false;
+			}
+		});
+		//使ListView可以左滑
+		noteTitleList.setSwipeDirection(SwipeMenuListView.DIRECTION_LEFT);
+		
+		adapter = new NoteAdapter(this, R.layout.note_item, noteList);
+		noteTitleList.setAdapter(adapter);
+		// 添加点击事件
+		noteTitleList.setOnItemClickListener(new OnItemClickListener() {
+			@Override
+			public void onItemClick(AdapterView<?> parent, View view,
+					int position, long id) {
+				NoteContentActivity.start(NoteTitleActivity.this,
+						noteList.get(position).getTitle(),
+						noteList.get(position).getContent());
+			}
+		});
+		addNewNote = (Button) findViewById(R.id.add_new_note);
+		addNewNote.setOnClickListener(new OnClickListener() {
+
+			@Override
+			public void onClick(View v) {
+				EditActivity.start(NoteTitleActivity.this, null, null);
+			}
+		});
+	}
+
+	public class NoteAdapter extends ArrayAdapter<Note> {
+		private int resourceId;
+
+		public NoteAdapter(Context context, int resource, List<Note> objects) {
+			super(context, resource, objects);
+			resourceId = resource;
+		}
+
+		@Override
+		public View getView(int position, View convertView, ViewGroup parent) {
+			Note note = getItem(position);
+			View view;
+			if (convertView == null) {
+				view = LayoutInflater.from(getContext()).inflate(resourceId,
+						null);
+			} else {
+				view = convertView;
+			}
+			TextView noteTitleText = (TextView) view
+					.findViewById(R.id.note_title);
+			noteTitleText.setText(note.getTitle());
+			TextView noteContentText = (TextView) view
+					.findViewById(R.id.note_content);
+			noteContentText.setText(note.getContent());
+			return view;
+		}
+
+	}
+
+	// 获取笔记
+	private void initList() {
+		noteList = new ArrayList<Note>();
+		new RefreshFromDB().execute();
+	}
+
+	@Override
+	public void onBackPressed() {
+		if (System.currentTimeMillis() - lastReturnTime > 2500) {
+			Toast.makeText(this, "再按一次退出", Toast.LENGTH_SHORT).show();
+			lastReturnTime = System.currentTimeMillis();
+		} else {
+			ActivityCollector.finishAll();
+		}
+	}
+	class RefreshFromDB extends AsyncTask<Void, Integer, Boolean>{
+
+		@Override
+		protected void onPreExecute() {
+			
+			super.onPreExecute();
+		}
+
+		@Override
+		protected void onPostExecute(Boolean result) {
+			super.onPostExecute(result);
+			adapter.notifyDataSetChanged();
+			changeButton();
+		}
+
+		@Override
+		protected void onProgressUpdate(Integer... values) {
+			super.onProgressUpdate(values);
+		}
+
+		@Override
+		protected Boolean doInBackground(Void... params) {
+			SQLiteDatabase database = dbHelper.getWritableDatabase();
+			Cursor cursor = database.query("note", null, null, null, null, null, "time");
+			if(cursor.moveToFirst()){
+				do{
+					int id = cursor.getInt(cursor.getColumnIndex("id"));
+					String title = cursor.getString(cursor.getColumnIndex("title"));
+					String content = cursor.getString(cursor.getColumnIndex("content"));
+					long time = cursor.getInt(cursor.getColumnIndex("time"));
+					Note note = new Note();
+					note.setContent(content);
+					note.setTitle(title);
+					note.setTime(time);
+					note.setId(id);
+					noteList.add(note);
+				}while(cursor.moveToNext());
+			}
+			cursor.close();
+			return null;
+		}
+		
+	}
+	private void changeButton(){
+		if(noteList.size()==0){
+			addNewNote.setText("本地没有笔记，点我添加或者下拉刷新");
+		}
+	}
+
+}
